@@ -99,7 +99,7 @@
         /* Cursor */
         .cursor {
             background-color: var(--c64-text);
-            animation: blink 0.5s step-end infinite;
+            animation: blink 0.75s step-end infinite;
         }
 
         @keyframes blink {
@@ -229,6 +229,7 @@
             clearScreen();
 
             // Initial Message
+            printLine(" ");
             printLine("    **** COMMODORE 64 BASIC V2 ****");
             printLine(" ");
             printLine(" 64K RAM SYSTEM  38911 BASIC BYTES FREE");
@@ -237,6 +238,7 @@
 
             basicProgram = {};
             isRunning = false;
+            renderCursor();
         }
 
         function softReset() {
@@ -272,15 +274,9 @@
             cell.innerText = data.char;
             cell.style.color = data.color;
 
-            // Handle "reverse" video if we implemented it, or cursor
-            if (x === cursorX && y === cursorY && !isRunning) {
-                cell.classList.add('cursor');
-                cell.style.backgroundColor = data.color;
-                cell.style.color = "var(--c64-bg)";
-            } else {
-                cell.classList.remove('cursor');
-                cell.style.backgroundColor = 'transparent';
-            }
+            // Cursor logic moved to renderCursor to prevent ghosting during text printing
+            cell.classList.remove('cursor');
+            cell.style.backgroundColor = 'transparent';
         }
 
         function renderCursor() {
@@ -443,6 +439,14 @@
             }
         }
 
+        // --- Visual Effects ---
+        function triggerResetGlitch() {
+            displayEl.style.clipPath = 'inset(0 7px 0 2px)'; // Cut off 2px left, 7px right
+            setTimeout(() => {
+                displayEl.style.clipPath = 'none';
+            }, 2000);
+        }
+
         // --- BASIC Interpreter ---
 
         async function processInput(line) {
@@ -462,58 +466,68 @@
                 }
             } else {
                 // Direct mode
-                await executeCommand(line);
-                // After direct command, print READY.
-                printLine("READY.");
-                renderCursor();
+                const result = await executeCommand(line);
+                // After direct command, print READY. unless suppressed (e.g. reset)
+                if (result !== 'SUPPRESS_READY') {
+                    printLine("READY.");
+                    renderCursor();
+                }
             }
         }
 
         async function executeCommand(cmdStr) {
             if (!cmdStr) return;
-            const parts = cmdStr.trim().split(/\s+/); // very primitive tokenizer
-            const cmd = parts[0];
+            cmdStr = cmdStr.trim();
+            const upperCmd = cmdStr.toUpperCase();
 
-            if (cmd === "PRINT" || cmd === "?") {
-                // primitive print parser
-                // strip 'PRINT '
-                let content = cmdStr.substr(cmdStr.indexOf(" ") + 1);
-                if (parts.length === 1 && (cmd === "PRINT" || cmd === "?")) content = ""; // Empty print
+            // Helper to check start
+            const startsWith = (cmd) => upperCmd.startsWith(cmd);
 
-                // Handle quotes
-                if (content.startsWith('"') && content.endsWith('"')) {
+            if (startsWith("PRINT") || startsWith("?")) {
+                let cmdLength = startsWith("PRINT") ? 5 : 1;
+                let content = cmdStr.substring(cmdLength).trim();
+                // Handle cases like PRINT"HELLO" where trim doesn't help if strictly parsed, 
+                // but here substring removes command. 
+                // C64 basic is loose. 
+
+                if (content === "") {
+                    // Empty print
+                } else if (content.startsWith('"') && content.endsWith('"')) {
+                    // Determine quote content. 
+                    // A simple slice isn't enough if there are multiple prints, but for this one-pager:
                     printLine(content.slice(1, -1));
+                } else if (content.startsWith('"')) {
+                    // Quote valid till end
+                    printLine(content.substring(1).replace(/"$/, ''));
                 } else {
-                    // Try to eval expression? No, strict strings for now or basic numbers
-                    printLine(content); // Just print raw
+                    printLine(content);
                 }
             }
-            else if (cmd === "LIST") {
+            else if (upperCmd === "LIST") {
                 const lines = Object.keys(basicProgram).sort((a, b) => a - b);
                 for (let ln of lines) {
                     printLine(` ${ln} ${basicProgram[ln]}`);
                 }
             }
-            else if (cmd === "NEW") {
+            else if (upperCmd === "NEW") {
                 basicProgram = {};
             }
-            else if (cmd === "CLS" || (cmd === "PRINT" && parts[1] === 'CHR$(147)')) {
-                // CLS isn't standard C64 basic (it's PRINT CHR$(147)), but good for users
+            else if (upperCmd === "CLS" || (startsWith("PRINT") && upperCmd.includes("CHR$(147)"))) {
                 clearScreen();
             }
-            else if (cmd === "SYS") {
-                if (parts[1] === "64738") {
+            else if (startsWith("SYS")) {
+                // Extract number with regex to handle SYS64738
+                const match = upperCmd.match(/^SYS\s*(\d+)$/);
+                if (match && match[1] === "64738") {
+                    triggerResetGlitch();
                     softReset();
-                    // Return early to skip "READY." message from caller (reset handles it)
-                    return;
+                    return 'SUPPRESS_READY';
                 }
             }
-            else if (cmd === "RUN") {
+            else if (upperCmd === "RUN") {
                 await runProgram();
             }
-            else if (cmd === "GOTO") {
-                // Handled inside RUN loop generally. 
-                // In direct mode, GOTO is weird. 
+            else if (startsWith("GOTO")) {
                 printLine("?UNDEF'D STATEMENT ERROR");
             }
             else {
