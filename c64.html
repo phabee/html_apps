@@ -193,6 +193,7 @@
         let grid = []; // 2D array of {char, color, inverse}
         let basicProgram = {}; // Line number -> command string
         let isRunning = false;
+        let stopRequested = false;
         let inputBuffer = ""; // Current line being typed if we need to parse it later
 
         const displayEl = document.getElementById('display');
@@ -407,6 +408,11 @@
         // --- Input Handling ---
 
         function handleKey(e) {
+            if (e.key === "Escape") {
+                stopRequested = true;
+                return;
+            }
+
             if (isRunning) return; // Block input while running? Or allow stop?
 
             e.preventDefault();
@@ -546,6 +552,7 @@
 
         async function runProgram() {
             isRunning = true;
+            stopRequested = false;
             const lines = Object.keys(basicProgram).map(Number).sort((a, b) => a - b);
             if (lines.length === 0) {
                 isRunning = false;
@@ -556,6 +563,11 @@
             let loops = 0;
 
             while (currentIdx < lines.length && isRunning) {
+                if (stopRequested) {
+                    printLine("BREAK IN " + lines[currentIdx]);
+                    break;
+                }
+
                 // Safety break for infinite loops in this single-threaded env
                 loops++;
                 if (loops % 20 === 0) {
@@ -563,27 +575,52 @@
                 }
 
                 let ln = lines[currentIdx];
-                let code = basicProgram[ln];
-                let parts = code.trim().split(/\s+/);
-                let cmd = parts[0];
+                let code = basicProgram[ln].trim();
+                let upperCode = code.toUpperCase();
 
-                if (cmd === "PRINT") {
-                    let content = code.substr(code.indexOf(" ") + 1);
-                    if (content.startsWith('"')) content = content.replace(/"/g, '');
-                    printLine(content);
+                if (upperCode.startsWith("PRINT") || upperCode.startsWith("?")) {
+                    let len = upperCode.startsWith("PRINT") ? 5 : 1;
+                    let content = code.substring(len).trim();
+
+                    let suppressNewline = false;
+                    if (content.endsWith(';')) {
+                        suppressNewline = true;
+                        content = content.slice(0, -1).trim();
+                    }
+
+                    if (content === "") {
+                        // Empty print means newline unless suppressed
+                        if (!suppressNewline) printLine(" ");
+                    } else if (content.startsWith('"') && content.endsWith('"')) {
+                        printString(content.slice(1, -1));
+                        if (!suppressNewline) newLine();
+                    } else if (content.startsWith('"')) {
+                        // Quote valid till end
+                        printString(content.substring(1));
+                        if (!suppressNewline) newLine();
+                    } else {
+                        printString(content);
+                        if (!suppressNewline) newLine();
+                    }
                     currentIdx++;
                 }
-                else if (cmd === "GOTO") {
-                    let target = parseInt(parts[1]);
-                    let newIdx = lines.indexOf(target);
-                    if (newIdx !== -1) {
-                        currentIdx = newIdx;
+                else if (upperCode.startsWith("GOTO")) {
+                    const match = upperCode.match(/^GOTO\s*(\d+)/);
+                    if (match) {
+                        let target = parseInt(match[1]);
+                        let newIdx = lines.indexOf(target);
+                        if (newIdx !== -1) {
+                            currentIdx = newIdx;
+                        } else {
+                            printLine(`?UNDEF'D STATEMENT ERROR IN ${ln}`);
+                            break;
+                        }
                     } else {
-                        printLine(`?UNDEF'D STATEMENT ERROR IN ${ln}`);
-                        break;
+                        // Invalid GOTO
+                        currentIdx++;
                     }
                 }
-                else if (cmd === "END") {
+                else if (upperCode.startsWith("END")) {
                     break;
                 }
                 else {
