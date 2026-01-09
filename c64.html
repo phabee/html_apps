@@ -185,6 +185,25 @@
         const ROWS = 25;
         const MEM_SIZE = 65536; // Not fully simulated, but conceptual
 
+        const C64_COLORS = [
+            "#000000", // 0: Black
+            "#FFFFFF", // 1: White
+            "#880000", // 2: Red
+            "#AAFFEE", // 3: Cyan
+            "#CC44CC", // 4: Violet
+            "#00CC55", // 5: Green
+            "#40318D", // 6: Blue (Custom)
+            "#EEEE77", // 7: Yellow
+            "#DD8855", // 8: Orange
+            "#664400", // 9: Brown
+            "#FF7777", // 10: Light Red
+            "#333333", // 11: Dark Grey
+            "#777777", // 12: Grey
+            "#AAFF66", // 13: Light Green
+            "#8774E3", // 14: Light Blue (Custom)
+            "#BBBBBB"  // 15: Light Grey
+        ];
+
         // --- State ---
         let cursorX = 0;
         let cursorY = 0;
@@ -246,7 +265,27 @@
 
             basicProgram = {};
             isRunning = false;
+
+            // Reset Colors
+            applyPoke(53280, 14); // Light Blue Border (approx standard) -> actually standard is 14 (Light Blue) for border?
+            // Wait, Standard C64: Border Light Blue (14), Screen Blue (6).
+            // My CSS vars: --c64-border: #8774E3 (Light Blue-ish), --c64-bg: #40318D (Blue).
+            // Let's use the exact palette colors for consistency after reset.
+            // Blue = 6, Light Blue = 14.
+            applyPoke(53280, 14);
+            applyPoke(53281, 6);
+
             renderCursor();
+        }
+
+        function applyPoke(addr, val) {
+            val = parseInt(val) & 15; // Limit to 0-15
+            const color = C64_COLORS[val];
+            if (addr === 53280) { // Border
+                document.querySelector('.crt-screen').style.backgroundColor = color;
+            } else if (addr === 53281) { // Background
+                displayEl.style.backgroundColor = color;
+            }
         }
 
         function softReset() {
@@ -540,6 +579,12 @@
                     return 'SUPPRESS_READY';
                 }
             }
+            else if (startsWith("POKE")) {
+                const match = upperCmd.match(/^POKE\s*(\d+)\s*,\s*(\d+)/);
+                if (match) {
+                    applyPoke(parseInt(match[1]), parseInt(match[2]));
+                }
+            }
             else if (upperCmd === "RUN") {
                 await runProgram();
             }
@@ -621,6 +666,13 @@
                         // Invalid GOTO
                         currentIdx++;
                     }
+                }
+                else if (upperCode.startsWith("POKE")) {
+                    const match = upperCode.match(/^POKE\s*(\d+)\s*,\s*(\d+)/);
+                    if (match) {
+                        applyPoke(parseInt(match[1]), parseInt(match[2]));
+                    }
+                    currentIdx++;
                 }
                 else if (upperCode.startsWith("END")) {
                     break;
