@@ -453,12 +453,14 @@
         }
 
         // --- Visual Effects ---
-        function triggerResetGlitch() {
+        // --- Visual Effects ---
+        function triggerResetGlitch(onComplete) {
             displayEl.style.clipPath = 'inset(0 21px 0 7px)'; // 0.5 char left (7px), 1.5 char right (21px)
             displayEl.classList.add('resetting');
             setTimeout(() => {
                 displayEl.style.clipPath = 'none';
                 displayEl.classList.remove('resetting');
+                if (onComplete) onComplete();
             }, 2000);
         }
 
@@ -534,8 +536,7 @@
                 // Extract number with regex to handle SYS64738
                 const match = upperCmd.match(/^SYS\s*(\d+)$/);
                 if (match && match[1] === "64738") {
-                    triggerResetGlitch();
-                    softReset();
+                    triggerResetGlitch(softReset);
                     return 'SUPPRESS_READY';
                 }
             }
