@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>C64 Simulator</title>
+    <!-- Importing an authentic-looking C64 font -->
+    <link href="https://fonts.cdnfonts.com/css/commodore-64-pixelized" rel="stylesheet">
+    <style>
+        :root {
+            --c64-border: #8774E3;
+            /* Light Blue */
+            --c64-bg: #40318D;
+            /* Blue */
+            --c64-text: #A79BF3;
+            /* Light Blue text */
+            --crt-curvature: 0deg;
+            /* subtle curve */
+        }
+
+        body {
+            background-color: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Commodore 64 Pixelized', monospace;
+            -webkit-font-smoothing: none;
+        }
+
+        /* The Monitor Case (Bezel) */
+        .monitor-case {
+            background: #222;
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow:
+                0 0 0 10px #333,
+                0 0 50px rgba(0, 0, 0, 0.8),
+                inset 0 0 20px rgba(0, 0, 0, 1);
+            position: relative;
+        }
+
+        /* The CRT Screen Container */
+        .crt-screen {
+            width: 640px;
+            /* 320 * 2 */
+            height: 480px;
+            /* 200 * 2.4 (aspect ratio correction roughly) */
+            background-color: var(--c64-border);
+            position: relative;
+            overflow: hidden;
+            border-radius: 100px / 20px;
+            /* Slight tube curve */
+            box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.6);
+
+            /* CRT curving effect */
+            /* transform: perspective(1000px) rotateX(1deg); This can be tricky with text alignment, keeping it simple for now */
+        }
+
+        /* The Active Display Area */
+        .c64-display {
+            width: 560px;
+            /* 40 chars * 14px (scaled) */
+            height: 400px;
+            /* 25 lines * 16px (scaled) */
+            background-color: var(--c64-bg);
+            margin: 40px auto;
+            /* Centered in the border */
+            position: relative;
+            color: var(--c64-text);
+            font-size: 16px;
+            line-height: 16px;
+            white-space: pre;
+            overflow: hidden;
+            cursor: default;
+        }
+
+        /* Grid for layout */
+        .char-grid {
+            display: grid;
+            grid-template-columns: repeat(40, 1fr);
+            grid-template-rows: repeat(25, 1fr);
+            width: 100%;
+            height: 100%;
+        }
+
+        .char-cell {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            /* Debug: border: 1px solid #ffffff11; */
+        }
+
+        /* Cursor */
+        .cursor {
+            background-color: var(--c64-text);
+            animation: blink 0.5s step-end infinite;
+        }
+
+        @keyframes blink {
+
+            0%,
+            50% {
+                opacity: 1;
+            }
+
+            51%,
+            100% {
+                opacity: 0;
+            }
+        }
+
+        /* Scanlines & Glow Overlay */
+        .crt-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background:
+                linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+                linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 4px, 6px 100%;
+            /* Scanline size */
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .crt-flicker {
+            animation: flicker 0.15s infinite;
+            opacity: 0.1;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #fff;
+            pointer-events: none;
+            mix-blend-mode: overlay;
+        }
+
+        @keyframes flicker {
+            0% {
+                opacity: 0.02;
+            }
+
+            50% {
+                opacity: 0.05;
+            }
+
+            100% {
+                opacity: 0.02;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="monitor-case">
+        <div class="crt-screen">
+            <div class="c64-display" id="display">
+                <!-- Grid will be generated here -->
+            </div>
+            <div class="crt-overlay"></div>
+            <div class="crt-flicker"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- System Constants ---
+        const COLS = 40;
+        const ROWS = 25;
+        const MEM_SIZE = 65536; // Not fully simulated, but conceptual
+
+        // --- State ---
+        let cursorX = 0;
+        let cursorY = 0;
+        let textColor = "var(--c64-text)";
+        let insertMode = false;
+        let grid = []; // 2D array of {char, color, inverse}
+        let basicProgram = {}; // Line number -> command string
+        let isRunning = false;
+        let inputBuffer = ""; // Current line being typed if we need to parse it later
+
+        const displayEl = document.getElementById('display');
+        const cells = []; // DOM references
+
+        // --- Boot ---
+        function init() {
+            createGrid();
+            reset();
+
+            document.addEventListener('keydown', handleKey);
+
+            // Blink cursor manually via class
+            setInterval(() => {
+                renderCursor();
+            }, 500);
+        }
+
+        function createGrid() {
+            displayEl.innerHTML = '';
+            displayEl.style.display = 'grid';
+            displayEl.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
+            displayEl.style.gridTemplateRows = `repeat(${ROWS}, 1fr)`;
+
+            for (let y = 0; y < ROWS; y++) {
+                grid[y] = [];
+                for (let x = 0; x < COLS; x++) {
+                    let cell = document.createElement('div');
+                    cell.className = 'char-cell';
+                    displayEl.appendChild(cell);
+                    cells.push(cell);
+                    grid[y][x] = { char: ' ', color: textColor, reverse: false };
+                }
+            }
+        }
+
+        // --- Core Logic ---
+
+        function reset() {
+            // Clear screen
+            clearScreen();
+
+            // Initial Message
+            printLine("    **** COMMODORE 64 BASIC V2 ****");
+            printLine(" ");
+            printLine(" 64K RAM SYSTEM  38911 BASIC BYTES FREE");
+            printLine(" ");
+            printLine("READY.");
+
+            basicProgram = {};
+            isRunning = false;
+        }
+
+        function softReset() {
+            // Emulate SYS 64739 behavior
+            reset();
+        }
+
+        function clearScreen() {
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    grid[y][x] = { char: ' ', color: textColor };
+                }
+            }
+            cursorX = 0;
+            cursorY = 0;
+            renderAll();
+        }
+
+        function renderAll() {
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    updateCell(x, y);
+                }
+            }
+            renderCursor();
+        }
+
+        function updateCell(x, y) {
+            if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
+
+            const cell = cells[y * COLS + x];
+            const data = grid[y][x];
+            cell.innerText = data.char;
+            cell.style.color = data.color;
+
+            // Handle "reverse" video if we implemented it, or cursor
+            if (x === cursorX && y === cursorY && !isRunning) {
+                cell.classList.add('cursor');
+                cell.style.backgroundColor = data.color;
+                cell.style.color = "var(--c64-bg)";
+            } else {
+                cell.classList.remove('cursor');
+                cell.style.backgroundColor = 'transparent';
+            }
+        }
+
+        function renderCursor() {
+            // Just force update of the specific cell where cursor is (and was)
+            // Simplified: we update all for now to clear old cursors easily
+            // Optimisation: track old cursor pos
+
+            // For simplicity in this one-pager, rely on CSS class toggling in updateCell
+            // We re-render the whole grid on every keypress which is fine for 1000 cells.
+            // Actually, let's just update the specific cursor cell to avoid flicker? 
+            // No, simplest is re-render previous cursor pos and new cursor pos.
+            // But for <1ms render time, re-rendering all is easiest to avoid bugs.
+
+            // Wait, the blinking is CSS animation. We just need to move the class.
+            // The loops in renderAll handle the class assignment.
+
+            // Let's just find the current cursor cell and add class, remove from others
+            cells.forEach(c => {
+                c.classList.remove('cursor');
+                c.style.removeProperty('background-color');
+                c.style.removeProperty('color');
+                // Reset to grid color
+                // (This is getting messy, let's stick to updateCell logic)
+            });
+
+            // Re-apply logic for current cursor
+            const idx = cursorY * COLS + cursorX;
+            if (cells[idx]) {
+                cells[idx].classList.add('cursor');
+                cells[idx].style.backgroundColor = grid[cursorY][cursorX].color;
+                cells[idx].style.color = "var(--c64-bg)";
+            }
+
+            // Restore others? 
+            // This is why full render or smart render is needed. 
+            // Let's just re-iterate all cells to be safe and strictly correct visually.
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    let cell = cells[y * COLS + x];
+                    let data = grid[y][x];
+                    if (x === cursorX && y === cursorY && !isRunning) {
+                        // Cursor is here
+                    } else {
+                        cell.classList.remove('cursor');
+                        cell.style.backgroundColor = 'transparent';
+                        cell.style.color = data.color;
+                    }
+                }
+            }
+        }
+
+        function printChar(char) {
+            if (char === '\n') {
+                newLine();
+                return;
+            }
+
+            grid[cursorY][cursorX].char = char;
+            // Optimization: update DOM immediately
+            updateCell(cursorX, cursorY);
+
+            cursorX++;
+            if (cursorX >= COLS) {
+                newLine();
+            }
+        }
+
+        function printLine(text) {
+            text = text.toUpperCase();
+            for (let i = 0; i < text.length; i++) {
+                printChar(text[i]);
+            }
+            newLine();
+        }
+
+        // Print without newline at end
+        function printString(text) {
+            text = text.toUpperCase();
+            for (let i = 0; i < text.length; i++) {
+                printChar(text[i]);
+            }
+        }
+
+        function newLine() {
+            cursorX = 0;
+            cursorY++;
+            if (cursorY >= ROWS) {
+                scrollUp();
+                cursorY = ROWS - 1;
+            }
+        }
+
+        function scrollUp() {
+            for (let y = 0; y < ROWS - 1; y++) {
+                grid[y] = grid[y + 1].map(cell => ({ ...cell })); // deepish copy
+            }
+            // Clear last line
+            grid[ROWS - 1] = [];
+            for (let x = 0; x < COLS; x++) {
+                grid[ROWS - 1][x] = { char: ' ', color: textColor };
+            }
+            renderAll();
+        }
+
+        function backspace() {
+            if (cursorX > 0) {
+                cursorX--;
+                grid[cursorY][cursorX].char = ' ';
+                updateCell(cursorX, cursorY);
+            } else if (cursorY > 0) {
+                // C64 behavior: moving back to previous line on backspace isn't standard in all modes per se
+                // but standard editor does wrap back if you typed over the line end.
+                // Simplified: just move back on current line.
+                cursorX = COLS - 1;
+                cursorY--;
+                grid[cursorY][cursorX].char = ' ';
+                updateCell(cursorX, cursorY);
+            }
+        }
+
+        // --- Input Handling ---
+
+        function handleKey(e) {
+            if (isRunning) return; // Block input while running? Or allow stop?
+
+            e.preventDefault();
+
+            // Mapping some keys
+            if (e.key === "Backspace") {
+                backspace();
+                renderCursor();
+                return;
+            }
+
+            if (e.key === "Enter") {
+                // Read the current line from the screen buffer!
+                let lineContent = "";
+                // In C64, when you press return, it parses the *current logical line*.
+                // We will simplify: parse the physical line the cursor is on.
+                // If the line spans multiple rows (40+ chars), C64 handles that. We will just check strict 40 chars for this v1.
+
+                for (let x = 0; x < COLS; x++) {
+                    lineContent += grid[cursorY][x].char;
+                }
+
+                newLine();
+                renderCursor();
+
+                processInput(lineContent.trimRight());
+                return;
+            }
+
+            if (e.key.length === 1) {
+                // Printable char
+                let char = e.key.toUpperCase();
+                // Basic filtering
+                // Allow printable ASCII
+                printChar(char);
+                renderCursor();
+            }
+        }
+
+        // --- BASIC Interpreter ---
+
+        async function processInput(line) {
+            if (!line) return;
+
+            // Extract line number if present
+            const match = line.match(/^(\d+)\s*(.*)/);
+
+            if (match) {
+                const lineNum = parseInt(match[1]);
+                const rest = match[2];
+                if (rest.trim() === "") {
+                    // Deletion
+                    delete basicProgram[lineNum];
+                } else {
+                    basicProgram[lineNum] = rest;
+                }
+            } else {
+                // Direct mode
+                await executeCommand(line);
+                // After direct command, print READY.
+                printLine("READY.");
+                renderCursor();
+            }
+        }
+
+        async function executeCommand(cmdStr) {
+            if (!cmdStr) return;
+            const parts = cmdStr.trim().split(/\s+/); // very primitive tokenizer
+            const cmd = parts[0];
+
+            if (cmd === "PRINT" || cmd === "?") {
+                // primitive print parser
+                // strip 'PRINT '
+                let content = cmdStr.substr(cmdStr.indexOf(" ") + 1);
+                if (parts.length === 1 && (cmd === "PRINT" || cmd === "?")) content = ""; // Empty print
+
+                // Handle quotes
+                if (content.startsWith('"') && content.endsWith('"')) {
+                    printLine(content.slice(1, -1));
+                } else {
+                    // Try to eval expression? No, strict strings for now or basic numbers
+                    printLine(content); // Just print raw
+                }
+            }
+            else if (cmd === "LIST") {
+                const lines = Object.keys(basicProgram).sort((a, b) => a - b);
+                for (let ln of lines) {
+                    printLine(` ${ln} ${basicProgram[ln]}`);
+                }
+            }
+            else if (cmd === "NEW") {
+                basicProgram = {};
+            }
+            else if (cmd === "CLS" || (cmd === "PRINT" && parts[1] === 'CHR$(147)')) {
+                // CLS isn't standard C64 basic (it's PRINT CHR$(147)), but good for users
+                clearScreen();
+            }
+            else if (cmd === "SYS") {
+                if (parts[1] === "64738") {
+                    softReset();
+                    // Return early to skip "READY." message from caller (reset handles it)
+                    return;
+                }
+            }
+            else if (cmd === "RUN") {
+                await runProgram();
+            }
+            else if (cmd === "GOTO") {
+                // Handled inside RUN loop generally. 
+                // In direct mode, GOTO is weird. 
+                printLine("?UNDEF'D STATEMENT ERROR");
+            }
+            else {
+                printLine("?SYNTAX ERROR");
+            }
+        }
+
+        async function runProgram() {
+            isRunning = true;
+            const lines = Object.keys(basicProgram).map(Number).sort((a, b) => a - b);
+            if (lines.length === 0) {
+                isRunning = false;
+                return;
+            }
+
+            let currentIdx = 0;
+            let loops = 0;
+
+            while (currentIdx < lines.length && isRunning) {
+                // Safety break for infinite loops in this single-threaded env
+                loops++;
+                if (loops % 20 === 0) {
+                    await new Promise(r => setTimeout(r, 10)); // Yield to UI
+                }
+
+                let ln = lines[currentIdx];
+                let code = basicProgram[ln];
+                let parts = code.trim().split(/\s+/);
+                let cmd = parts[0];
+
+                if (cmd === "PRINT") {
+                    let content = code.substr(code.indexOf(" ") + 1);
+                    if (content.startsWith('"')) content = content.replace(/"/g, '');
+                    printLine(content);
+                    currentIdx++;
+                }
+                else if (cmd === "GOTO") {
+                    let target = parseInt(parts[1]);
+                    let newIdx = lines.indexOf(target);
+                    if (newIdx !== -1) {
+                        currentIdx = newIdx;
+                    } else {
+                        printLine(`?UNDEF'D STATEMENT ERROR IN ${ln}`);
+                        break;
+                    }
+                }
+                else if (cmd === "END") {
+                    break;
+                }
+                else {
+                    // Ignore unknown
+                    currentIdx++;
+                }
+            }
+            isRunning = false;
+        }
+
+        // Start
+        init();
+
+    </script>
+</body>
+
+</html>
