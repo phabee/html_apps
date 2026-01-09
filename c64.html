@@ -564,6 +564,7 @@
 
             while (currentIdx < lines.length && isRunning) {
                 if (stopRequested) {
+                    if (cursorX > 0) newLine();
                     printLine("BREAK IN " + lines[currentIdx]);
                     break;
                 }
