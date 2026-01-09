@@ -562,7 +562,7 @@
             else if (upperCmd === "LIST") {
                 const lines = Object.keys(basicProgram).sort((a, b) => a - b);
                 for (let ln of lines) {
-                    printLine(` ${ln} ${basicProgram[ln]}`);
+                    printLine(`${ln} ${basicProgram[ln]}`);
                 }
             }
             else if (upperCmd === "NEW") {
