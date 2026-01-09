@@ -102,6 +102,13 @@
             animation: blink 0.75s step-end infinite;
         }
 
+        /* Freeze cursor during reset */
+        .resetting .cursor {
+            animation: none;
+            opacity: 1;
+            /* Force visible */
+        }
+
         @keyframes blink {
 
             0%,
@@ -441,9 +448,11 @@
 
         // --- Visual Effects ---
         function triggerResetGlitch() {
-            displayEl.style.clipPath = 'inset(0 7px 0 2px)'; // Cut off 2px left, 7px right
+            displayEl.style.clipPath = 'inset(0 21px 0 7px)'; // 0.5 char left (7px), 1.5 char right (21px)
+            displayEl.classList.add('resetting');
             setTimeout(() => {
                 displayEl.style.clipPath = 'none';
+                displayEl.classList.remove('resetting');
             }, 2000);
         }
 
