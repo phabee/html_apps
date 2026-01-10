@@ -20,6 +20,9 @@ I have successfully created a single-file Commodore 64 simulator that runs in th
         - **Escape Key**: Breaks running programs with a correctly formatted `BREAK IN LINE...` message.
         - **Semicolons**: `PRINT "Hello";` suppresses newline for continuous output.
         - **Commands**: `NEW` clears memory; `LIST` format refined (no leading spaces).
+        - **Cursor Control**: `Arrow Keys` move cursor freely. `Enter` reads text from the current line for execution/editing.
+        - **Authentic Cursor**: Blinking now swaps colors (Foreground <-> Background) instead of fading.
+        - **Cursor Wrapping**: Cursor wraps to previous/next line when hitting left/right screen edges.
 
 ## Verification Results
 
@@ -49,5 +52,18 @@ I used a browser agent to verify the core functionality:
     *   **NEW Command**: Clears program from memory.
     ![Cleared Program](./img/new_cleared_list_1767997365139.png)
 
+5.  **Cursor & Editing**: Verified cursor navigation and editing.
+    *   **Cursor Blink**: Character 'A' remains visible (inverted colors) when cursor is "on".
+    ![Cursor Blink Text](./img/cursor_blink_on_text_1768068185002.png)
+    *   **Editing**: Edited line to `10 PRINT "B"`, ran it, verified output "B".
+    ![Edited Run](./img/cursor_edited_run_1768068248614.png)
+
+6.  **Cursor Wrapping**: Verified wrapping behavior.
+    *   **Wrap Left**: Left Arrow from (0, y) wraps to (39, y-1).
+    ![Left Wrap](./img/cursor_wrapped_left_1768068901703.png)
+    *   **Wrap Right**: Right Arrow from (39, y) wraps to (0, y+1).
+    ![Right Wrap](./img/cursor_wrapped_right_1768070880911.png)
+
 @verification_video
-![Browser Verification](./img/new_list_verification_1767997266179.webp)
+![Cursor Blink Verification](./img/cursor_final_verification_1768039820934.webp)
+![Cursor Wrap Verification](./img/cursor_wrapping_verification_1768068547095.webp)

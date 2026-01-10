@@ -441,12 +441,22 @@
                 return;
             }
             if (e.key === "ArrowLeft") {
-                if (cursorX > 0) cursorX--;
+                if (cursorX > 0) {
+                    cursorX--;
+                } else if (cursorY > 0) {
+                    cursorX = COLS - 1;
+                    cursorY--;
+                }
                 renderCursor();
                 return;
             }
             if (e.key === "ArrowRight") {
-                if (cursorX < COLS - 1) cursorX++;
+                if (cursorX < COLS - 1) {
+                    cursorX++;
+                } else if (cursorY < ROWS - 1) {
+                    cursorX = 0;
+                    cursorY++;
+                }
                 renderCursor();
                 return;
             }
