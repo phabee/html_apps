@@ -457,6 +457,27 @@
             e.preventDefault();
 
             // Mapping some keys
+            if (e.key === "ArrowUp") {
+                if (cursorY > 0) cursorY--;
+                renderCursor();
+                return;
+            }
+            if (e.key === "ArrowDown") {
+                if (cursorY < ROWS - 1) cursorY++;
+                renderCursor();
+                return;
+            }
+            if (e.key === "ArrowLeft") {
+                if (cursorX > 0) cursorX--;
+                renderCursor();
+                return;
+            }
+            if (e.key === "ArrowRight") {
+                if (cursorX < COLS - 1) cursorX++;
+                renderCursor();
+                return;
+            }
+
             if (e.key === "Backspace") {
                 backspace();
                 renderCursor();
