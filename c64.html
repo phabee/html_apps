@@ -98,27 +98,28 @@
 
         /* Cursor */
         .cursor {
-            background-color: var(--c64-text);
-            animation: blink 0.75s step-end infinite;
+            animation: c64-blink 0.75s step-end infinite;
         }
 
         /* Freeze cursor during reset */
         .resetting .cursor {
             animation: none;
-            opacity: 1;
-            /* Force visible */
+            background-color: var(--fg, #A79BF3);
+            color: var(--c64-bg);
         }
 
-        @keyframes blink {
+        @keyframes c64-blink {
 
             0%,
             50% {
-                opacity: 1;
+                background-color: var(--fg, #A79BF3);
+                color: var(--c64-bg);
             }
 
             51%,
             100% {
-                opacity: 0;
+                background-color: transparent;
+                color: var(--fg, #A79BF3);
             }
         }
 
@@ -319,57 +320,29 @@
             const cell = cells[y * COLS + x];
             const data = grid[y][x];
             cell.innerText = data.char;
-            cell.style.color = data.color;
+            // Use CSS var for animation
+            cell.style.setProperty('--fg', data.color);
+            cell.style.color = 'var(--fg)';
 
-            // Cursor logic moved to renderCursor to prevent ghosting during text printing
             cell.classList.remove('cursor');
             cell.style.backgroundColor = 'transparent';
         }
 
         function renderCursor() {
-            // Just force update of the specific cell where cursor is (and was)
-            // Simplified: we update all for now to clear old cursors easily
-            // Optimisation: track old cursor pos
-
-            // For simplicity in this one-pager, rely on CSS class toggling in updateCell
-            // We re-render the whole grid on every keypress which is fine for 1000 cells.
-            // Actually, let's just update the specific cursor cell to avoid flicker? 
-            // No, simplest is re-render previous cursor pos and new cursor pos.
-            // But for <1ms render time, re-rendering all is easiest to avoid bugs.
-
-            // Wait, the blinking is CSS animation. We just need to move the class.
-            // The loops in renderAll handle the class assignment.
-
-            // Let's just find the current cursor cell and add class, remove from others
-            cells.forEach(c => {
-                c.classList.remove('cursor');
-                c.style.removeProperty('background-color');
-                c.style.removeProperty('color');
-                // Reset to grid color
-                // (This is getting messy, let's stick to updateCell logic)
-            });
-
-            // Re-apply logic for current cursor
-            const idx = cursorY * COLS + cursorX;
-            if (cells[idx]) {
-                cells[idx].classList.add('cursor');
-                cells[idx].style.backgroundColor = grid[cursorY][cursorX].color;
-                cells[idx].style.color = "var(--c64-bg)";
-            }
-
-            // Restore others? 
-            // This is why full render or smart render is needed. 
-            // Let's just re-iterate all cells to be safe and strictly correct visually.
             for (let y = 0; y < ROWS; y++) {
                 for (let x = 0; x < COLS; x++) {
                     let cell = cells[y * COLS + x];
                     let data = grid[y][x];
+
+                    // Ensure color is correct (in case it was messed up)
+                    cell.style.setProperty('--fg', data.color);
+                    cell.style.color = 'var(--fg)';
+                    cell.style.backgroundColor = 'transparent'; // CSS animation handles override
+
                     if (x === cursorX && y === cursorY && !isRunning) {
-                        // Cursor is here
+                        cell.classList.add('cursor');
                     } else {
                         cell.classList.remove('cursor');
-                        cell.style.backgroundColor = 'transparent';
-                        cell.style.color = data.color;
                     }
                 }
             }
